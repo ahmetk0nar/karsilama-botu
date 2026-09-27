@@ -4,11 +4,11 @@ import threading
 from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, StatusUpdate
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 
-TOKEN = "8860001138:AAEx-64_E90wzmDJEEKRsS6IDgGJ-NwyIQw"
+TOKEN = "SENIN_TOKENIN_BURAYA_GELECEK"
 VERI_DOSYASI = "uyeler.json"
 
 class DummyHandler(BaseHTTPRequestHandler):
@@ -65,7 +65,6 @@ def banner_olustur(kullanici_adi):
     bio.seek(0)
     return bio
 
-# Yeni üye sistem mesajını yakalayan kusursuz fonksiyon
 async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mesaj = update.message
     if not mesaj or not mesaj.new_chat_members:
@@ -77,7 +76,6 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
 
     for kullanici in mesaj.new_chat_members:
-        # Eğer botun kendisi katıldıysa işlem yapma
         if kullanici.id == context.bot.id:
             continue
             
@@ -85,7 +83,6 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id_str = str(kullanici.id)
         username = f"@{kullanici.username}" if kullanici.username else f"[{kullanici_adi}](tg://user?id={kullanici.id})"
 
-        # Veritabanına kaydet
         veriler[user_id_str] = {
             "ad": kullanici_adi,
             "katilis_tarihi": bugun_tarihi,
@@ -93,7 +90,6 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         verileri_kaydet(veriler)
 
-        # Kurallar Butonu
         kurallar_url = "https://telegra.ph/Grup-Kurallar%C4%B1-09-27"
         buton = [[InlineKeyboardButton("📋 KURALLAR", url=kurallar_url)]]
         reply_markup = InlineKeyboardMarkup(buton)
@@ -143,7 +139,7 @@ def main():
     if app.job_queue:
         app.job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
     
-    # StatusUpdate filtreleriyle yeni üyeleri doğrudan yakalıyoruz
+    # Hatalı olan StatusUpdate sınıfı temizlendi, doğrudan filters kullanılıyor
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, yeni_uye_karsila))
     
     app.run_polling()
