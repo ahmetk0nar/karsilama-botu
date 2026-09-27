@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 
-TOKEN = "SENIN_TOKENIN_BURAYA_GELECEK"
+TOKEN = "8860001138:AAEx-64_E90wzmDJEEKRsS6IDgGJ-NwyIQw"
 VERI_DOSYASI = "uyeler.json"
 
 class DummyHandler(BaseHTTPRequestHandler):
