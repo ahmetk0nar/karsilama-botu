@@ -118,22 +118,21 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
-# Yıldönümü Kontrol Fonksiyonu (Her gün arka planda kontrol eder veya tetiklenir)
+# Yıldönümü Kontrol Fonksiyonu
 async def yildonumu_kontrol(context: ContextTypes.DEFAULT_TYPE):
     veriler = verileri_yukle()
-    bugun = datetime.now().strftime("%m-%d") # Sadece Ay ve Gün (Örn: "09-27")
+    bugun = datetime.now().strftime("%m-%d") 
     
     for user_id, bilgi in veriler.items():
-        katilis_str = bilgi.get("katilis_tarihi") # "2026-09-27" gibi
+        katilis_str = bilgi.get("katilis_tarihi") 
         if katilis_str:
             katilis_tarihi = datetime.strptime(katilis_str, "%Y-%m-%d")
-            # Katıldığı yıl bugünden küçükse ve bugün ay/gün olarak eşleşiyorsa yıldönümüdür
             if katilis_tarihi.year < datetime.now().year and katilis_tarihi.strftime("%m-%d") == bugun:
                 chat_id = bilgi.get("chat_id")
                 isim = bilgi.get("ad")
                 
                 kutlama_mesaji = (
-                    f"🎉 **Harika bir gün!** Bugün [{isim}](tg://user?id={user_id}) kullanıcısının aramızdaki **1. (veya katıldığı yıl dönümü) yıl dönümü!** "
+                    f"🎉 **Harika bir gün!** Bugün [{isim}](tg://user?id={user_id}) kullanıcısının aramızdaki **yıl dönümü!** "
                     f"İyi ki varsın, topluluğumuza kattığın değer için teşekkür ederiz! 🚀"
                 )
                 try:
@@ -146,9 +145,9 @@ def main():
     
     app = Application.builder().token(TOKEN).build()
     
-    # Zamanlayıcı ekleyelim: Her 24 saatte bir (86400 saniye) yıldönümlerini kontrol etsin
-    job_queue = app.job_queue
-    job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
+    # JobQueue'nun güvenli bir şekilde aktif edilmesi
+    if app.job_queue:
+        app.job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
     
     app.add_handler(ChatMemberHandler(yeni_uye_karsila, ChatMemberHandler.CHAT_MEMBER))
     
