@@ -1,12 +1,15 @@
 import os
+import json
 import threading
 from io import BytesIO
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, ChatMemberHandler, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 
 TOKEN = "8860001138:AAEx-64_E90wzmDJEEKRsS6IDgGJ-NwyIQw"
+VERI_DOSYASI = "uyeler.json"
 
 # Render ve UptimeRobot için sahte web sunucusu
 class DummyHandler(BaseHTTPRequestHandler):
@@ -14,7 +17,7 @@ class DummyHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"Karsilama Botu Aktif!")
+        self.wfile.write(b"Karsilama ve Yildonumu Botu Aktif!")
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -22,19 +25,30 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
-# Kişiselleştirilmiş Karşılama Görseli (Banner) Üreten Fonksiyon
+# JSON Veritabanı İşlemleri
+def verileri_yukle():
+    if os.path.exists(VERI_DOSYASI):
+        try:
+            with open(VERI_DOSYASI, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def verileri_kaydet(veri):
+    with open(VERI_DOSYASI, "w", encoding="utf-8") as f:
+        json.dump(veri, f, ensure_ascii=False, indent=4)
+
+# Banner Üretme Fonksiyonu
 def banner_olustur(kullanici_adi):
-    # 800x400 boyutunda şık koyu gri/mavi tonlarında bir arkaplan oluşturuyoruz
     genislik, yukseklik = 800, 400
-    arkaplan_rengi = (20, 24, 33) # Koyu tema renk
+    arkaplan_rengi = (20, 24, 33)
     img = Image.new("RGB", (genislik, yukseklik), color=arkaplan_rengi)
     draw = ImageDraw.Draw(img)
     
-    # Çerçeve ekleyelim
     draw.rectangle([15, 15, genislik - 15, yukseklik - 15], outline=(52, 152, 219), width=3)
     
     try:
-        # Sistemde varsayılan kalın bir font bulmaya çalışalım, yoksa varsayılanı kullanır
         font_baslik = ImageFont.truetype("arial.ttf", 36)
         font_isim = ImageFont.truetype("arial.ttf", 44)
         font_alt = ImageFont.truetype("arial.ttf", 22)
@@ -43,20 +57,19 @@ def banner_olustur(kullanici_adi):
         font_isim = ImageFont.load_default()
         font_alt = ImageFont.load_default()
         
-    # Yazıları ortalayarak ekleyelim
     draw.text((genislik / 2, 80), "ARAMIZA HOŞ GELDİN", fill=(255, 255, 255), anchor="mm", font=font_baslik)
     draw.text((genislik / 2, 170), f"{kullanici_adi}", fill=(52, 152, 219), anchor="mm", font=font_isim)
     draw.text((genislik / 2, 260), "Topluluğumuzun yeni gücü sen de oldun!", fill=(189, 195, 199), anchor="mm", font=font_alt)
     draw.text((genislik / 2, 330), "‼️ Kurallara uymayan uyarılmadan gruptan çıkarılır ‼️", fill=(231, 76, 60), anchor="mm", font=font_alt)
     
-    # Bellekte görseli bayt (bytes) formatına çeviriyoruz ki Telegram'a dosya olarak gönderebilelim
     bio = BytesIO()
     bio.name = 'hosgeldin.png'
     img.save(bio, 'PNG')
     bio.seek(0)
     return bio
 
-async def yeni_uye_Karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Yeni Üye Karşılama ve Kayıt Fonksiyonu
+async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.chat_member
     if not result:
         return
@@ -67,10 +80,22 @@ async def yeni_uye_Karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if eski_durum in ["left", "banned"] and yeni_durum in ["member", "administrator"]:
         kullanici = result.new_chat_member.user
         kullanici_adi = kullanici.first_name
+        user_id_str = str(kullanici.id)
         username = f"@{kullanici.username}" if kullanici.username else f"[{kullanici_adi}](tg://user?id={kullanici.id})"
         
         chat = result.chat
         toplam_uye = await chat.get_member_count()
+
+        # Üyenin katılım tarihini ve adını veritabanına kaydedelim
+        veriler = verileri_yukle()
+        bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
+        
+        veriler[user_id_str] = {
+            "ad": kullanici_adi,
+            "katilis_tarihi": bugun_tarihi,
+            "chat_id": chat.id
+        }
+        verileri_kaydet(veriler)
 
         # Kurallar Butonu
         kurallar_url = "https://telegra.ph/Grup-Kurallar%C4%B1-09-27"
@@ -83,10 +108,8 @@ async def yeni_uye_Karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"‼️ Kurallara uymayan uyarılmadan gruptan çıkarılır ‼️"
         )
 
-        # 1. Kişiselleştirilmiş Banner Görselini Üret
         banner_dosyasi = banner_olustur(kullanici_adi)
 
-        # 2. Görseli ve metni butonla birlikte gruba gönder
         await context.bot.send_photo(
             chat_id=chat.id,
             photo=banner_dosyasi,
@@ -95,11 +118,39 @@ async def yeni_uye_Karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
+# Yıldönümü Kontrol Fonksiyonu (Her gün arka planda kontrol eder veya tetiklenir)
+async def yildonumu_kontrol(context: ContextTypes.DEFAULT_TYPE):
+    veriler = verileri_yukle()
+    bugun = datetime.now().strftime("%m-%d") # Sadece Ay ve Gün (Örn: "09-27")
+    
+    for user_id, bilgi in veriler.items():
+        katilis_str = bilgi.get("katilis_tarihi") # "2026-09-27" gibi
+        if katilis_str:
+            katilis_tarihi = datetime.strptime(katilis_str, "%Y-%m-%d")
+            # Katıldığı yıl bugünden küçükse ve bugün ay/gün olarak eşleşiyorsa yıldönümüdür
+            if katilis_tarihi.year < datetime.now().year and katilis_tarihi.strftime("%m-%d") == bugun:
+                chat_id = bilgi.get("chat_id")
+                isim = bilgi.get("ad")
+                
+                kutlama_mesaji = (
+                    f"🎉 **Harika bir gün!** Bugün [{isim}](tg://user?id={user_id}) kullanıcısının aramızdaki **1. (veya katıldığı yıl dönümü) yıl dönümü!** "
+                    f"İyi ki varsın, topluluğumuza kattığın değer için teşekkür ederiz! 🚀"
+                )
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=kutlama_mesaji, parse_mode="Markdown")
+                except:
+                    pass
+
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(ChatMemberHandler(yeni_uye_Karsila, ChatMemberHandler.CHAT_MEMBER))
+    
+    # Zamanlayıcı ekleyelim: Her 24 saatte bir (86400 saniye) yıldönümlerini kontrol etsin
+    job_queue = app.job_queue
+    job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
+    
+    app.add_handler(ChatMemberHandler(yeni_uye_karsila, ChatMemberHandler.CHAT_MEMBER))
     
     app.run_polling()
 
