@@ -4,20 +4,19 @@ import threading
 from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, ChatMemberHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, StatusUpdate
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 
 TOKEN = "8860001138:AAEx-64_E90wzmDJEEKRsS6IDgGJ-NwyIQw"
 VERI_DOSYASI = "uyeler.json"
 
-# Render ve UptimeRobot için sahte web sunucusu
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
-        self.wfile.write(b"Karsilama ve Yildonumu Botu Aktif!")
+        self.wfile.write(b"Karsilama Botu Aktif!")
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -25,7 +24,6 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
-# JSON Veritabanı İşlemleri
 def verileri_yukle():
     if os.path.exists(VERI_DOSYASI):
         try:
@@ -39,7 +37,6 @@ def verileri_kaydet(veri):
     with open(VERI_DOSYASI, "w", encoding="utf-8") as f:
         json.dump(veri, f, ensure_ascii=False, indent=4)
 
-# Banner Üretme Fonksiyonu
 def banner_olustur(kullanici_adi):
     genislik, yukseklik = 800, 400
     arkaplan_rengi = (20, 24, 33)
@@ -68,28 +65,27 @@ def banner_olustur(kullanici_adi):
     bio.seek(0)
     return bio
 
-# Yeni Üye Karşılama ve Kayıt Fonksiyonu
+# Yeni üye sistem mesajını yakalayan kusursuz fonksiyon
 async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = update.chat_member
-    if not result:
+    mesaj = update.message
+    if not mesaj or not mesaj.new_chat_members:
         return
 
-    yeni_durum = result.new_chat_member.status
-    eski_durum = result.old_chat_member.status
+    chat = mesaj.chat
+    toplam_uye = await chat.get_member_count()
+    veriler = verileri_yukle()
+    bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
 
-    if eski_durum in ["left", "banned"] and yeni_durum in ["member", "administrator"]:
-        kullanici = result.new_chat_member.user
+    for kullanici in mesaj.new_chat_members:
+        # Eğer botun kendisi katıldıysa işlem yapma
+        if kullanici.id == context.bot.id:
+            continue
+            
         kullanici_adi = kullanici.first_name
         user_id_str = str(kullanici.id)
         username = f"@{kullanici.username}" if kullanici.username else f"[{kullanici_adi}](tg://user?id={kullanici.id})"
-        
-        chat = result.chat
-        toplam_uye = await chat.get_member_count()
 
-        # Üyenin katılım tarihini ve adını veritabanına kaydedelim
-        veriler = verileri_yukle()
-        bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
-        
+        # Veritabanına kaydet
         veriler[user_id_str] = {
             "ad": kullanici_adi,
             "katilis_tarihi": bugun_tarihi,
@@ -118,7 +114,6 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
-# Yıldönümü Kontrol Fonksiyonu
 async def yildonumu_kontrol(context: ContextTypes.DEFAULT_TYPE):
     veriler = verileri_yukle()
     bugun = datetime.now().strftime("%m-%d") 
@@ -145,11 +140,11 @@ def main():
     
     app = Application.builder().token(TOKEN).build()
     
-    # JobQueue'nun güvenli bir şekilde aktif edilmesi
     if app.job_queue:
         app.job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
     
-    app.add_handler(ChatMemberHandler(yeni_uye_karsila, ChatMemberHandler.CHAT_MEMBER))
+    # StatusUpdate filtreleriyle yeni üyeleri doğrudan yakalıyoruz
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, yeni_uye_karsila))
     
     app.run_polling()
 
