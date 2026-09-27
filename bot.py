@@ -5,7 +5,7 @@ from io import BytesIO
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, ChatMemberHandler, ContextTypes
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 TOKEN = "8860001138:AAEx-64_E90wzmDJEEKRsS6IDgGJ-NwyIQw"
@@ -40,12 +40,10 @@ def verileri_kaydet(veri):
 def banner_olustur(kullanici_adi):
     genislik, yukseklik = 800, 400
     
-    # Gönderdiğin arka plan fotoğrafını yüklüyoruz
     if os.path.exists("arkaplan.jpg"):
         try:
             arka_plan = Image.open("arkaplan.jpg").convert("RGB")
             arka_plan = arka_plan.resize((genislik, yukseklik))
-            # Yazıların net okunabilmesi için arka planı biraz karartıyoruz (dimming)
             enhancer = ImageEnhance.Brightness(arka_plan)
             img = enhancer.enhance(0.4) 
         except:
@@ -54,8 +52,6 @@ def banner_olustur(kullanici_adi):
         img = Image.new("RGB", (genislik, yukseklik), color=(20, 24, 33))
 
     draw = ImageDraw.Draw(img)
-    
-    # Şık bir çerçeve ekleyelim
     draw.rectangle([15, 15, genislik - 15, yukseklik - 15], outline=(52, 152, 219), width=3)
     
     try:
@@ -67,7 +63,6 @@ def banner_olustur(kullanici_adi):
         font_isim = ImageFont.load_default()
         font_alt = ImageFont.load_default()
         
-    # Türkçe imla kurallarına uygun metinler ve düzgün hizalama
     draw.text((genislik / 2, 80), "ARAMIZA HOŞ GELDİNİZ", fill=(255, 255, 255), anchor="mm", font=font_baslik)
     draw.text((genislik / 2, 170), f"{kullanici_adi}", fill=(52, 152, 219), anchor="mm", font=font_isim)
     draw.text((genislik / 2, 260), "Topluluğumuzun yeni gücü sen de oldun!", fill=(220, 225, 230), anchor="mm", font=font_alt)
@@ -80,28 +75,23 @@ def banner_olustur(kullanici_adi):
     return bio
 
 async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = update.chat_member
-    if not result:
+    mesaj = update.message
+    if not mesaj or not mesaj.new_chat_members:
         return
 
-    yeni_durum = result.new_chat_member.status
-    eski_durum = result.old_chat_member.status
+    chat = mesaj.chat
+    toplam_uye = await chat.get_member_count()
+    veriler = verileri_yukle()
+    bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
 
-    if eski_durum in ["left", "banned"] and yeni_durum in ["member", "administrator"]:
-        kullanici = result.new_chat_member.user
+    for kullanici in mesaj.new_chat_members:
         if kullanici.id == context.bot.id:
-            return
+            continue
             
         kullanici_adi = kullanici.first_name
         user_id_str = str(kullanici.id)
         username = f"@{kullanici.username}" if kullanici.username else f"[{kullanici_adi}](tg://user?id={kullanici.id})"
-        
-        chat = result.chat
-        toplam_uye = await chat.get_member_count()
 
-        veriler = verileri_yukle()
-        bugun_tarihi = datetime.now().strftime("%Y-%m-%d")
-        
         veriler[user_id_str] = {
             "ad": kullanici_adi,
             "katilis_tarihi": bugun_tarihi,
@@ -113,7 +103,7 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buton = [[InlineKeyboardButton("📋 KURALLAR", url=kurallar_url)]]
         reply_markup = InlineKeyboardMarkup(buton)
 
-        # 1. Aşama: Önce metin mesajı gönderiliyor
+        # 1. Önce metin mesajı
         metin = (
             f"Aramıza hoş geldin {username}!\n"
             f"Seninle birlikte artık **{toplam_uye}** kişi olduk!\n\n"
@@ -127,9 +117,8 @@ async def yeni_uye_karsila(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
-        # 2. Aşama: Ardından özel arka planlı banner fotoğrafı gönderiliyor
+        # 2. Ardından banner fotoğrafı
         banner_dosyasi = banner_olustur(kullanici_adi)
-
         await context.bot.send_photo(
             chat_id=chat.id,
             photo=banner_dosyasi
@@ -164,7 +153,8 @@ def main():
     if app.job_queue:
         app.job_queue.run_repeating(yildonumu_kontrol, interval=86400, first=10)
     
-    app.add_handler(ChatMemberHandler(yeni_uye_karsila, ChatMemberHandler.CHAT_MEMBER))
+    # En kararlı sistem mesajı yakalayıcısı
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, yeni_uye_karsila))
     
     app.run_polling()
 
